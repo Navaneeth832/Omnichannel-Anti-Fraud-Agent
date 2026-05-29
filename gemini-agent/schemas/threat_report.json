@@ -1,0 +1,35 @@
+{
+    "case_id": "",
+    "timestamp": "",
+    "threat_score": 0.0,
+  
+    "risk_level": "",
+  
+    "fraud_type": "",
+  
+    "behavioral_analysis": {
+      "artificial_urgency": 0.0,
+      "social_coercion": 0.0,
+      "institutional_deviation": 0.0
+    },
+  
+    "detected_entities": {
+      "institution": "",
+      "phone_number": "",
+      "website": "",
+      "payment_method": ""
+    },
+  
+    "verification_results": {
+      "mongodb_check": "",
+      "elastic_check": ""
+    },
+  
+    "reasoning_summary": "",
+  
+    "recommended_action": "",
+  
+    "guardian_alert_required": false,
+  
+    "blacklist_candidate": false
+  }
