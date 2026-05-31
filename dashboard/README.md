@@ -98,7 +98,7 @@ Streamlit Frontend (streamlit_app.py)
 
 ---
 
-## 🔐 Environment Variables (future)
+## 🔐 Environment Variables
 
 Create a `.env` file in the project root:
 
@@ -109,7 +109,21 @@ MONGODB_URI=mongodb+srv://...
 ELASTICSEARCH_URL=https://...
 ELASTICSEARCH_API_KEY=...
 GEMINI_API_KEY=...
+AGENT_BUILDER_WEBHOOK_URL=https://your-agent-builder-webhook
+AGENT_BUILDER_WEBHOOK_BEARER_TOKEN=optional-bearer-token
+AGENT_BUILDER_WEBHOOK_TIMEOUT_SECS=30
 ```
+
+### Agent Builder webhook payload
+
+The Streamlit app now sends submitted evidence directly to `AGENT_BUILDER_WEBHOOK_URL` with Python `requests.post(...)`.
+
+- Text is sent as the `text` form field.
+- Audio is sent as the `audio` multipart file field.
+- Images are sent as the `image` multipart file field.
+- Metadata fields include `timestamp`, `source`, and `channels`.
+
+If the webhook URL is not configured, the dashboard skips delivery and continues with the local simulated analysis flow.
 
 ---
 

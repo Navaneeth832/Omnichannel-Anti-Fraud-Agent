@@ -13,12 +13,17 @@ Author: Anti-Fraud Team
 Version: 1.0.0
 """
 
-import streamlit as st
-import time
-import random
 import base64
+import json
+import mimetypes
+import os
+import random
+import time
 from datetime import datetime
 from io import BytesIO
+
+import requests
+import streamlit as st
 from PIL import Image
 
 # ─────────────────────────────────────────────
@@ -283,9 +288,98 @@ def encode_image_base64(image_file) -> str:
     return base64.b64encode(image_file.getvalue()).decode("utf-8")
 
 
+def build_upload_tuple(uploaded_file):
+    """Convert a Streamlit UploadedFile into a requests-compatible multipart tuple."""
+    if uploaded_file is None:
+        return None
+
+    content_type = getattr(uploaded_file, "type", None) or mimetypes.guess_type(uploaded_file.name)[0]
+    return (
+        uploaded_file.name,
+        uploaded_file.getvalue(),
+        content_type or "application/octet-stream",
+    )
+
+
 def validate_inputs(audio_file, image_file, text_input: str) -> bool:
     """Ensure at least one channel is provided before analysis."""
     return any([audio_file is not None, image_file is not None, text_input.strip()])
+
+
+def post_media_to_agent_builder(audio_file, image_file, text_input: str) -> dict:
+    """
+    POST uploaded media directly to the Agent Builder webhook as multipart form-data.
+
+    Expected environment variables:
+    - AGENT_BUILDER_WEBHOOK_URL
+    - AGENT_BUILDER_WEBHOOK_TIMEOUT_SECS (optional, default: 30)
+    - AGENT_BUILDER_WEBHOOK_BEARER_TOKEN (optional)
+    """
+    webhook_url = os.getenv("AGENT_BUILDER_WEBHOOK_URL", "").strip()
+    if not webhook_url:
+        return {
+            "status": "skipped",
+            "message": "AGENT_BUILDER_WEBHOOK_URL is not configured.",
+        }
+
+    headers = {}
+    bearer_token = os.getenv("AGENT_BUILDER_WEBHOOK_BEARER_TOKEN", "").strip()
+    if bearer_token:
+        headers["Authorization"] = f"Bearer {bearer_token}"
+
+    payload = {
+        "timestamp": get_timestamp(),
+        "source": "streamlit_dashboard",
+        "channels": json.dumps({
+            "audio": audio_file is not None,
+            "image": image_file is not None,
+            "text": bool(text_input.strip()),
+        }),
+        "text": text_input.strip(),
+    }
+
+    files = {}
+    audio_tuple = build_upload_tuple(audio_file)
+    image_tuple = build_upload_tuple(image_file)
+    if audio_tuple:
+        files["audio"] = audio_tuple
+    if image_tuple:
+        files["image"] = image_tuple
+
+    timeout_secs = int(os.getenv("AGENT_BUILDER_WEBHOOK_TIMEOUT_SECS", "30"))
+
+    try:
+        response = requests.post(
+            webhook_url,
+            data=payload,
+            files=files or None,
+            headers=headers,
+            timeout=timeout_secs,
+        )
+        response.raise_for_status()
+
+        response_body = response.text.strip()
+        if len(response_body) > 500:
+            response_body = response_body[:500] + "..."
+
+        return {
+            "status": "success",
+            "message": f"Webhook accepted request ({response.status_code}).",
+            "status_code": response.status_code,
+            "response_body": response_body,
+        }
+    except requests.RequestException as exc:
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+        response_body = ""
+        if getattr(exc, "response", None) is not None:
+            response_body = exc.response.text.strip()[:500]
+
+        return {
+            "status": "error",
+            "message": f"Webhook POST failed: {exc}",
+            "status_code": status_code,
+            "response_body": response_body,
+        }
 
 
 # ─────────────────────────────────────────────
@@ -607,7 +701,9 @@ def render_analysis_progress(audio_file, image_file, text_input: str):
     image_res = results_collected[1] if len(results_collected) > 1 else analyze_image(None)
     text_res  = results_collected[2] if len(results_collected) > 2 else analyze_text("")
 
-    return aggregate_results(audio_res, image_res, text_res)
+    result = aggregate_results(audio_res, image_res, text_res)
+    result["webhook_delivery"] = post_media_to_agent_builder(audio_file, image_file, text_input)
+    return result
 
 
 def render_results(result: dict):
@@ -668,6 +764,26 @@ def render_results(result: dict):
         """, unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
+
+    webhook_delivery = result.get("webhook_delivery", {})
+    if webhook_delivery:
+        st.markdown('<div class="section-label">AGENT BUILDER WEBHOOK</div>', unsafe_allow_html=True)
+
+        if webhook_delivery["status"] == "success":
+            st.success(webhook_delivery["message"])
+        elif webhook_delivery["status"] == "skipped":
+            st.info(webhook_delivery["message"])
+        else:
+            st.warning(webhook_delivery["message"])
+
+        status_code = webhook_delivery.get("status_code")
+        response_body = webhook_delivery.get("response_body")
+        if status_code:
+            st.caption(f"HTTP status: {status_code}")
+        if response_body:
+            st.code(response_body, language="text")
+
+        st.markdown("<br>", unsafe_allow_html=True)
 
     # ── Row 2: Recommended action ──
     action_colors = {
