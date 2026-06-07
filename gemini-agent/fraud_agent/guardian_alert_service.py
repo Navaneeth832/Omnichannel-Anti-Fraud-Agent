@@ -1,143 +1,87 @@
-import os
+from __future__ import annotations
+
 import logging
-from typing import Dict, Any
+from typing import Any, Dict, List
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+from .config import get_settings
+from .mcp.mongo_adapter import get_guardian_profiles, save_alert_log
+from .schemas import GuardianProfile
 
-# Try to import Twilio and SendGrid clients
 try:
     from twilio.rest import Client as TwilioClient
-except ImportError:
+except ImportError:  # pragma: no cover
     TwilioClient = None
-    logging.warning("Twilio client not installed. Twilio alerts will be disabled.")
 
 try:
     from sendgrid import SendGridAPIClient
     from sendgrid.helpers.mail import Mail
-except ImportError:
+except ImportError:  # pragma: no cover
     SendGridAPIClient = None
     Mail = None
-    logging.warning("SendGrid client not installed. SendGrid alerts will be disabled.")
+
+logger = logging.getLogger(__name__)
+
+
+def _trusted_profiles() -> List[GuardianProfile]:
+    profiles = []
+    for item in get_guardian_profiles():
+        profile = GuardianProfile(
+            guardian_name=item.get("guardian_name", "Trusted Guardian"),
+            guardian_phone=item.get("guardian_phone", ""),
+            guardian_email=item.get("guardian_email", ""),
+            escalation_enabled=bool(item.get("escalation_enabled", True)),
+        )
+        if profile.escalation_enabled and (profile.guardian_phone or profile.guardian_email):
+            profiles.append(profile)
+    return profiles
+
 
 def _send_twilio_sms(to_phone_number: str, message_body: str) -> Dict[str, Any]:
-    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-    twilio_phone_number = os.getenv("TWILIO_PHONE_NUMBER")
-
-    if not all([account_sid, auth_token, twilio_phone_number]):
-        logging.error("Twilio credentials or phone number missing. Cannot send SMS.")
-        return {"status": "failed", "message": "Twilio credentials or phone number missing."}
-
+    settings = get_settings()
+    if not all([settings.twilio_account_sid, settings.twilio_auth_token, settings.twilio_phone_number]):
+        return {"status": "skipped", "message": "Twilio is not fully configured."}
     if TwilioClient is None:
-        logging.error("Twilio client not available. Cannot send SMS.")
-        return {"status": "failed", "message": "Twilio client not available."}
-
+        return {"status": "skipped", "message": "Twilio client is not installed."}
     try:
-        client = TwilioClient(account_sid, auth_token)
-        message = client.messages.create(
-            to=to_phone_number,
-            from_=twilio_phone_number,
-            body=message_body
-        )
-        logging.info(f"Twilio SMS sent successfully. SID: {message.sid}")
+        client = TwilioClient(settings.twilio_account_sid, settings.twilio_auth_token)
+        message = client.messages.create(to=to_phone_number, from_=settings.twilio_phone_number, body=message_body)
         return {"status": "success", "sid": message.sid}
-    except Exception as e:
-        logging.error(f"Failed to send Twilio SMS: {e}")
-        return {"status": "failed", "message": str(e)}
+    except Exception as exc:
+        return {"status": "failed", "message": str(exc)}
+
 
 def _send_sendgrid_email(to_email: str, subject: str, html_content: str) -> Dict[str, Any]:
-    sendgrid_api_key = os.getenv("SENDGRID_API_KEY")
-    from_email = os.getenv("SENDGRID_FROM_EMAIL")
-
-    if not all([sendgrid_api_key, from_email]):
-        logging.error("SendGrid API key or sender email missing. Cannot send email.")
-        return {"status": "failed", "message": "SendGrid API key or sender email missing."}
-
+    settings = get_settings()
+    if not all([settings.sendgrid_api_key, settings.sendgrid_from_email]):
+        return {"status": "skipped", "message": "SendGrid is not fully configured."}
     if SendGridAPIClient is None or Mail is None:
-        logging.error("SendGrid client not available. Cannot send email.")
-        return {"status": "failed", "message": "SendGrid client not available."}
-
+        return {"status": "skipped", "message": "SendGrid client is not installed."}
     try:
-        message = Mail(
-            from_email=from_email,
-            to_emails=to_email,
-            subject=subject,
-            html_content=html_content
-        )
-        sendgrid_client = SendGridAPIClient(sendgrid_api_key)
-        response = sendgrid_client.send(message)
-        logging.info(f"SendGrid email sent successfully. Status Code: {response.status_code}")
-        return {"status": "success", "status_code": response.status_code, "body": response.body}
-    except Exception as e:
-        logging.error(f"Failed to send SendGrid email: {e}")
-        return {"status": "failed", "message": str(e)}
+        message = Mail(from_email=settings.sendgrid_from_email, to_emails=to_email, subject=subject, html_content=html_content)
+        response = SendGridAPIClient(settings.sendgrid_api_key).send(message)
+        return {"status": "success", "status_code": response.status_code, "body": (response.body or b"").decode("utf-8", "replace") if isinstance(response.body, bytes) else response.body}
+    except Exception as exc:
+        return {"status": "failed", "message": str(exc)}
 
-def send_fraud_alert(
-    threat_score: float,
-    case_id: str,
-    summary: str,
-    customer_contact: Dict[str, str]
-) -> Dict[str, Any]:
-    """
-    Sends fraud alerts based on threat score and available contact information.
-    """
-    alert_results = {}
-    alert_threshold = float(os.getenv("FRAUD_ALERT_THRESHOLD", "0.8"))
 
-    if threat_score >= alert_threshold:
-        logging.info(f"Threat score {threat_score} >= alert threshold {alert_threshold}. Sending alerts for case {case_id}.")
-
-        alert_message = f"FRAUD ALERT! Case ID: {case_id}. Threat Score: {threat_score:.2f}. Summary: {summary}"
-        alert_subject = f"Fraud Alert: Case {case_id} - Threat Score {threat_score:.2f}"
-
-        # Send SMS via Twilio
-        if "phone" in customer_contact and customer_contact["phone"]:
-            logging.info(f"Attempting to send Twilio SMS to {customer_contact['phone']}")
-            twilio_result = _send_twilio_sms(customer_contact["phone"], alert_message)
-            alert_results["twilio_sms"] = twilio_result
-        else:
-            logging.info("No customer phone number provided for Twilio SMS.")
-            alert_results["twilio_sms"] = {"status": "skipped", "message": "No customer phone number."}
-
-        # Send Email via SendGrid
-        if "email" in customer_contact and customer_contact["email"]:
-            logging.info(f"Attempting to send SendGrid email to {customer_contact['email']}")
-            sendgrid_result = _send_sendgrid_email(customer_contact["email"], alert_subject, f"<p>{alert_message}</p>")
-            alert_results["sendgrid_email"] = sendgrid_result
-        else:
-            logging.info("No customer email provided for SendGrid email.")
-            alert_results["sendgrid_email"] = {"status": "skipped", "message": "No customer email."}
-    else:
-        logging.info(f"Threat score {threat_score} < alert threshold {alert_threshold}. No alerts sent for case {case_id}.")
-        alert_results = {"status": "skipped", "message": "Threat score below alert threshold."}
-
-    return alert_results
-
-if __name__ == "__main__":
-    # Example usage (for testing purposes)
-    # Set environment variables before running this block
-    os.environ["TWILIO_ACCOUNT_SID"] = "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-    os.environ["TWILIO_AUTH_TOKEN"] = "your_auth_token"
-    os.environ["TWILIO_PHONE_NUMBER"] = "+15017122661"
-    os.environ["SENDGRID_API_KEY"] = "SG.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-    os.environ["SENDGRID_FROM_EMAIL"] = "test@example.com"
-    os.environ["FRAUD_ALERT_THRESHOLD"] = "0.8"
-
-    print("--- Testing send_fraud_alert with high threat score ---")
-    results_high = send_fraud_alert(
-        threat_score=0.9,
-        case_id="CASE-12345",
-        summary="Suspicious activity detected on account.",
-        customer_contact={"phone": "+1234567890", "email": "customer@example.com"}
-    )
-    print(results_high)
-
-    print("\n--- Testing send_fraud_alert with low threat score ---")
-    results_low = send_fraud_alert(
-        threat_score=0.7,
-        case_id="CASE-67890",
-        summary="Minor anomaly detected.",
-        customer_contact={"phone": "+1234567890", "email": "customer@example.com"}
-    )
-    print(results_low)
+def send_fraud_alert(threat_score: float, case_id: str, summary: str, trusted_contacts: List[GuardianProfile] | None = None) -> Dict[str, Any]:
+    settings = get_settings()
+    if threat_score < settings.fraud_alert_threshold:
+        return {"status": "skipped", "message": "Threat score below alert threshold.", "logs": []}
+    contacts = trusted_contacts if trusted_contacts is not None else _trusted_profiles()
+    if not contacts:
+        log = save_alert_log(case_id, "guardian", "skipped", {"message": "No trusted guardian contacts configured."})
+        return {"status": "skipped", "message": "No trusted guardian contacts configured.", "logs": [log]}
+    alert_message = f"Fraud alert for case {case_id}. Threat score {threat_score:.2f}. {summary}"
+    subject = f"Fraud Alert: Case {case_id}"
+    results: Dict[str, Any] = {"status": "sent", "logs": []}
+    for profile in contacts:
+        if profile.guardian_phone:
+            response = _send_twilio_sms(profile.guardian_phone, alert_message)
+            results["logs"].append(save_alert_log(case_id, "twilio", response.get("status", "unknown"), {"guardian_name": profile.guardian_name, **response}))
+        if profile.guardian_email:
+            response = _send_sendgrid_email(profile.guardian_email, subject, f"<p>{alert_message}</p>")
+            results["logs"].append(save_alert_log(case_id, "sendgrid", response.get("status", "unknown"), {"guardian_name": profile.guardian_name, **response}))
+    if not results["logs"]:
+        results["status"] = "skipped"
+    return results
