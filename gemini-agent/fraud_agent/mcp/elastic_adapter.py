@@ -46,14 +46,23 @@ def _use_real_backend() -> bool:
 
 def _client():
     if not _use_real_backend():
+        if os.getenv("STRICT_PRODUCTION_MODE", "false").lower() == "true":
+            raise RuntimeError("Elasticsearch is not configured, and STRICT_PRODUCTION_MODE is enabled. Cannot fall back to mock.")
         return None
-    return Elasticsearch(
-        os.getenv("ELASTIC_NODE", ""),
-        api_key=os.getenv("ELASTIC_API_KEY", ""),
-        request_timeout=1,
-        retry_on_timeout=False,
-        max_retries=0,
-    )
+    try:
+        client = Elasticsearch(
+            os.getenv("ELASTIC_NODE", ""),
+            api_key=os.getenv("ELASTIC_API_KEY", ""),
+            request_timeout=1,
+            retry_on_timeout=False,
+            max_retries=0,
+        )
+        client.info() # A simple call to check connection
+        return client
+    except Exception as e:
+        if os.getenv("STRICT_PRODUCTION_MODE", "false").lower() == "true":
+            raise RuntimeError(f"Failed to connect to Elasticsearch in STRICT_PRODUCTION_MODE: {e}")
+        return None
 
 
 def _index_name() -> str:
@@ -144,6 +153,8 @@ def _mock_candidates() -> List[dict]:
 def _fetch_candidates_from_es(search_text: str, size: int = 20) -> List[dict]:
     client = _client()
     if client is None:
+        # _client() already handles STRICT_PRODUCTION_MODE, so if it's None here, it means
+        # either not in strict mode or it's a mock fallback.
         return _mock_candidates()
     try:
         response = client.search(
@@ -168,7 +179,9 @@ def _fetch_candidates_from_es(search_text: str, size: int = 20) -> List[dict]:
             source["_score"] = hit.get("_score", 0.0)
             candidates.append(source)
         return candidates
-    except Exception:
+    except Exception as e:
+        if os.getenv("STRICT_PRODUCTION_MODE", "false").lower() == "true":
+            raise RuntimeError(f"Failed to search Elasticsearch in STRICT_PRODUCTION_MODE: {e}")
         return _mock_candidates()
 
 

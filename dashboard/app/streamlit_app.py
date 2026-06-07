@@ -3,6 +3,7 @@ import json
 import mimetypes
 import os
 import random
+import sys
 import time
 from datetime import datetime
 from io import BytesIO
@@ -11,6 +12,15 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 from PIL import Image
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.append(PROJECT_ROOT)
+
+# Now you can import it relative to the project root!
+# But because of the hyphen in the folder name, we must jump straight to 'fraud_agent'
+sys.path.append(os.path.join(PROJECT_ROOT, "gemini-agent"))
+
+from fraud_agent.system_health import check_system_health
 
 # ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 #  PAGE CONFIG
@@ -649,13 +659,25 @@ def render_logo():
 
 
 def render_nav():
+    if "page" not in st.session_state:
+        st.session_state.page = "threat_analysis"
+
+    def nav_item(label, page_name, icon):
+        active_class = "active" if st.session_state.page == page_name else ""
+        st.markdown(f"""
+        <div class="fs-nav-item {active_class}" onclick="window.parent.postMessage({{type: 'streamlit:setSessionState', payload: {{page: '{page_name}'}}}}, '*')">
+          {icon} {label}
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("""<div class="fs-nav">""", unsafe_allow_html=True)
+    nav_item("Threat Analysis", "threat_analysis", "≡ƒ¢í∩╕Å")
+    nav_item("Analytics", "analytics", "≡ƒôè")
+    nav_item("Case History", "case_history", "≡ƒôü")
+    nav_item("Integrations", "integrations", "≡ƒöî")
+    nav_item("Settings", "settings", "ΓÜÖ∩╕Å")
+    nav_item("System Health", "system_health", "≡ƒôû") # New System Health tab
     st.markdown("""
-    <div class="fs-nav">
-      <div class="fs-nav-item active">≡ƒ¢í∩╕Å Threat Analysis</div>
-      <div class="fs-nav-item">≡ƒôè Analytics</div>
-      <div class="fs-nav-item">≡ƒôü Case History</div>
-      <div class="fs-nav-item">≡ƒöî Integrations</div>
-      <div class="fs-nav-item">ΓÜÖ∩╕Å Settings</div>
       <div class="fs-nav-sep"></div>
       <div class="fs-nav-right">
         <span class="fs-status-chip">
@@ -1173,6 +1195,60 @@ def render_sidebar():
         st.caption("┬⌐ 2025 Anti-Fraud Team ┬╖ FraudShield Enterprise")
 
 
+def render_system_health_page():
+    render_section_header("≡ƒôû", "System Health Dashboard", "Real-time status of core components and integrations.")
+
+    health_report = check_system_health()
+
+    st.markdown("""
+    <style>
+    .health-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .health-item:last-child {
+        border-bottom: none;
+    }
+    .health-name {
+        font-weight: 600;
+        font-size: 0.9rem;
+        color: var(--text-primary);
+        width: 180px;
+        flex-shrink: 0;
+    }
+    .health-status-badge {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.75rem;
+        font-weight: 500;
+        padding: 4px 10px;
+        border-radius: 4px;
+        flex-shrink: 0;
+    }
+    .status-connected { background: var(--success-dim); color: var(--success); border: 1px solid rgba(34,197,94,0.2); }
+    .status-mock_mode { background: var(--warning-dim); color: var(--warning); border: 1px solid rgba(245,158,11,0.2); }
+    .status-disconnected, .status-misconfigured { background: var(--danger-dim); color: var(--danger); border: 1px solid rgba(239,68,68,0.2); }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:var(--r-lg); padding:1.2rem 1.4rem;">
+    """, unsafe_allow_html=True)
+
+    for component, data in health_report.items():
+        status = data['status']
+        status_class = f"status-{status.lower()}"
+        st.markdown(f"""
+        <div class="health-item">
+            <div class="health-name">{component.replace('_', ' ').title()}</div>
+            <div class="health-status-badge {status_class}">{status}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 # ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 #  MAIN
 # ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
@@ -1183,20 +1259,26 @@ def main():
     render_nav()
 
     st.markdown("<br>", unsafe_allow_html=True)
-    render_kpi_bar()
 
-    audio_file, image_file, text_input = render_input_sections()
-    clicked = render_analyze_button()
+    if st.session_state.page == "threat_analysis":
+        render_kpi_bar()
+        audio_file, image_file, text_input = render_input_sections()
+        clicked = render_analyze_button()
 
-    if clicked:
-        if not validate_inputs(audio_file, image_file, text_input):
-            st.error("ΓÜá∩╕Å Please provide at least one input (audio, image/PDF, or text) before analysing.")
-        else:
-            st.info("ΓÜí Omnichannel analysis in progress ΓÇö scanning all submitted channelsΓÇª")
-            with st.spinner(""):
-                result = render_analysis_progress(audio_file, image_file, text_input)
-            st.success("Γ£à Analysis complete ΓÇö threat report generated below.")
-            render_results(result)
+        if clicked:
+            if not validate_inputs(audio_file, image_file, text_input):
+                st.error("ΓÜá∩╕Å Please provide at least one input (audio, image/PDF, or text) before analysing.")
+            else:
+                st.info("ΓÜí Omnichannel analysis in progress ΓÇö scanning all submitted channelsΓÇª")
+                with st.spinner(""):
+                    result = render_analysis_progress(audio_file, image_file, text_input)
+                st.success("Γ£à Analysis complete ΓÇö threat report generated below.")
+                render_results(result)
+    elif st.session_state.page == "system_health":
+        render_system_health_page()
+    # Add other pages here as needed
+    else:
+        st.info(f"Page '{st.session_state.page}' not implemented yet.")
 
 
 if __name__ == "__main__":

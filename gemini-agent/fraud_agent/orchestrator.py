@@ -19,6 +19,8 @@ from .utils import (
     normalize_text,
 )
 
+from .guardian_alert_service import send_fraud_alert
+
 
 @dataclass
 class BehavioralAnalysis:
@@ -440,6 +442,27 @@ def run_pipeline(text: str, case_id: Optional[str] = None) -> dict:
                     "timestamp_logged": timestamp,
                 }
             )
+
+    # New: Call Guardian Alert Service if required
+    if report.guardian_alert_required:
+        customer_phone = report.detected_entities.phone_number
+        customer_email = emails[0] if emails else "" # Assuming first extracted email is customer email for now
+
+        customer_contact = {}
+        if customer_phone:
+            customer_contact["phone"] = customer_phone
+        if customer_email:
+            customer_contact["email"] = customer_email
+
+        alert_results = send_fraud_alert(
+            threat_score=report.threat_score,
+            case_id=report.case_id,
+            summary=report.reasoning_summary,
+            customer_contact=customer_contact
+        )
+        # Optionally, you might want to log or store alert_results
+        # For now, I'll just print it for observability
+        print(f"Guardian Alert Service Results for {report.case_id}: {alert_results}")
 
     return report.to_dict()
 

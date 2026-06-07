@@ -93,11 +93,20 @@ def _use_real_backend() -> bool:
 
 def _get_db_collection(collection_name: str):
     if not _use_real_backend():
+        if os.getenv("STRICT_PRODUCTION_MODE", "false").lower() == "true":
+            raise RuntimeError("MongoDB is not configured, and STRICT_PRODUCTION_MODE is enabled. Cannot fall back to mock.")
         return None
     uri = os.getenv("MONGODB_URI", "")
     database_name = os.getenv("MONGODB_DATABASE", "fraud_agent")
-    client = MongoClient(uri, serverSelectionTimeoutMS=1000)
-    return client[database_name][collection_name]
+    try:
+        client = MongoClient(uri, serverSelectionTimeoutMS=1000)
+        # Attempt a quick operation to verify connection
+        client.admin.command('ping')
+        return client[database_name][collection_name]
+    except Exception as e:
+        if os.getenv("STRICT_PRODUCTION_MODE", "false").lower() == "true":
+            raise RuntimeError(f"Failed to connect to MongoDB in STRICT_PRODUCTION_MODE: {e}")
+        return None
 
 
 def _normalize_rule_record(record: dict, matched_alias: Optional[str] = None) -> dict:
