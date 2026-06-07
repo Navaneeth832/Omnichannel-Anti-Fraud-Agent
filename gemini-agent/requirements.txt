@@ -1,4 +1,13 @@
 google-adk
+google-generativeai
 pymongo
 elasticsearch
+python-dotenv
+pydantic
 pytest
+pypdf
+Pillow
+pytesseract
+SpeechRecognition
+sendgrid
+twilio

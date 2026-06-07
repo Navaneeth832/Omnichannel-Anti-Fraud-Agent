@@ -12,7 +12,7 @@ except Exception:  # pragma: no cover - optional dependency
 from ..utils import dedupe_preserve_order, normalize_identity, normalize_text
 
 
-_MOCK_REGISTRY = [
+_SEEDED_REGISTRY = [
     {
         "brand": "State Bank of India",
         "domain": "sbi.co.in",
@@ -47,7 +47,7 @@ def _use_real_backend() -> bool:
 def _client():
     if not _use_real_backend():
         if os.getenv("STRICT_PRODUCTION_MODE", "false").lower() == "true":
-            raise RuntimeError("Elasticsearch is not configured, and STRICT_PRODUCTION_MODE is enabled. Cannot fall back to mock.")
+            raise RuntimeError("Elasticsearch is not configured, and STRICT_PRODUCTION_MODE is enabled. Cannot use deterministic fallback.")
         return None
     try:
         client = Elasticsearch(
@@ -146,16 +146,16 @@ def jaro_winkler_similarity(left: str, right: str) -> float:
     return round(jaro + prefix * 0.1 * (1.0 - jaro), 4)
 
 
-def _mock_candidates() -> List[dict]:
-    return deepcopy(_MOCK_REGISTRY)
+def _seeded_candidates() -> List[dict]:
+    return deepcopy(_SEEDED_REGISTRY)
 
 
 def _fetch_candidates_from_es(search_text: str, size: int = 20) -> List[dict]:
     client = _client()
     if client is None:
         # _client() already handles STRICT_PRODUCTION_MODE, so if it's None here, it means
-        # either not in strict mode or it's a mock fallback.
-        return _mock_candidates()
+        # either not in strict mode or it's a deterministic seed fallback.
+        return _seeded_candidates()
     try:
         response = client.search(
             index=_index_name(),
@@ -182,7 +182,7 @@ def _fetch_candidates_from_es(search_text: str, size: int = 20) -> List[dict]:
     except Exception as e:
         if os.getenv("STRICT_PRODUCTION_MODE", "false").lower() == "true":
             raise RuntimeError(f"Failed to search Elasticsearch in STRICT_PRODUCTION_MODE: {e}")
-        return _mock_candidates()
+        return _seeded_candidates()
 
 
 def search_identity(identity: str) -> dict:
@@ -320,3 +320,34 @@ def fuzzy_match_domain(domain: str) -> dict:
     else:
         result["best_candidate"] = None
     return result
+
+
+def ensure_index_mapping() -> None:
+    client = _client()
+    if client is None:
+        return
+    mapping = {
+        "mappings": {
+            "properties": {
+                "brand": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                "domain": {"type": "keyword"},
+                "aliases": {"type": "keyword"},
+                "official": {"type": "boolean"},
+                "registry_source": {"type": "keyword"},
+            }
+        }
+    }
+    if not client.indices.exists(index=_index_name()):
+        client.indices.create(index=_index_name(), **mapping)
+
+
+def seed_official_domain_registry(records: list[dict] | None = None) -> int:
+    client = _client()
+    payloads = records or _seeded_candidates()
+    if client is None:
+        return len(payloads)
+    ensure_index_mapping()
+    for record in payloads:
+        client.index(index=_index_name(), id=normalize_identity(record.get("domain", "")), document={**record, "registry_source": record.get("registry_source", "official_registry")})
+    client.indices.refresh(index=_index_name())
+    return len(payloads)
