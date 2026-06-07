@@ -1,1 +1,4 @@
 google-adk
+pymongo
+elasticsearch
+pytest
