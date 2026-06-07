@@ -9,7 +9,8 @@ from .orchestrator import analyze_text, run_pipeline
 
 try:
     from google.adk.agents import Agent
-except Exception:  # pragma: no cover
+except Exception: 
+    print("no agent")# pragma: no cover
     Agent = None
 
 
@@ -54,6 +55,7 @@ class ThreatReport(BaseModel):
 def _load_system_prompt() -> str:
     prompt_path = Path(__file__).resolve().parents[1] / "system_prompt" / "fraud_topology.txt"
     try:
+        print(prompt_path.read_text(encoding="utf-8"))
         return prompt_path.read_text(encoding="utf-8")
     except OSError:
         return "You are an anti-fraud analysis agent."
