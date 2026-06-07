@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -8,7 +9,7 @@ from .orchestrator import analyze_text, run_pipeline
 
 try:
     from google.adk.agents import Agent
-except Exception:  # pragma: no cover - optional dependency
+except Exception:  # pragma: no cover
     Agent = None
 
 
@@ -43,9 +44,11 @@ class ThreatReport(BaseModel):
     recommended_action: str
     guardian_alert_required: bool
     blacklist_candidate: bool
-    contradictions: list[dict] = Field(default_factory=list)
-    extracted_entities: dict = Field(default_factory=dict)
-    blacklist_hits: list[dict] = Field(default_factory=list)
+    contradictions: list[dict[str, Any]] = Field(default_factory=list)
+    extracted_entities: dict[str, Any] = Field(default_factory=dict)
+    blacklist_hits: list[dict[str, Any]] = Field(default_factory=list)
+    gemini_reasoning: dict[str, Any] = Field(default_factory=dict)
+    alert_status: str = "not_required"
 
 
 def _load_system_prompt() -> str:
@@ -57,13 +60,4 @@ def _load_system_prompt() -> str:
 
 
 SYSTEM_PROMPT = _load_system_prompt()
-
-root_agent = None
-if Agent is not None:  # pragma: no cover - optional dependency
-    root_agent = Agent(
-        name="fraud_detector",
-        model="gemini-2.5-flash",
-        instruction=SYSTEM_PROMPT,
-        output_schema=ThreatReport,
-    )
-
+root_agent = Agent(name="fraud_detector", model="gemini-2.5-flash", instruction=SYSTEM_PROMPT, output_schema=ThreatReport) if Agent is not None else None
