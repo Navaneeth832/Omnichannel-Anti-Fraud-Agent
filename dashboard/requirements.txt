@@ -58,3 +58,10 @@ pydantic>=2.7.0                   # Data models and validation
 # ── Observability ──────────────────────────────────────────────────────────
 # opentelemetry-sdk>=1.24.0         # Distributed tracing
 # google-cloud-logging>=3.10.0      # Cloud Logging integration
+
+google-generativeai>=0.8.0
+SpeechRecognition>=3.10.0
+pypdf>=4.0.0
+pytesseract>=0.3.10
+sendgrid>=6.11.0
+twilio>=9.0.0

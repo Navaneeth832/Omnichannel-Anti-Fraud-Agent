@@ -123,7 +123,7 @@ The Streamlit app now sends submitted evidence directly to `AGENT_BUILDER_WEBHOO
 - Images are sent as the `image` multipart file field.
 - Metadata fields include `timestamp`, `source`, and `channels`.
 
-If the webhook URL is not configured, the dashboard skips delivery and continues with the local simulated analysis flow.
+If the webhook URL is not configured, the dashboard continues to use the same local production orchestrator entry point without external webhook delivery.
 
 ---
 
