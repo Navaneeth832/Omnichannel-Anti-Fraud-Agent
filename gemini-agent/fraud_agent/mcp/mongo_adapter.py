@@ -5,10 +5,11 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Iterable, Optional
 from uuid import uuid4
-
+from difflib import SequenceMatcher
 try:
     from pymongo import ASCENDING, MongoClient
 except ImportError:  # pragma: no cover
+    print("no mongo")
     ASCENDING = 1
     MongoClient = None
 
@@ -85,19 +86,127 @@ def _normalize_rule_record(record: dict, matched_alias: Optional[str] = None) ->
     return normalized
 
 
+
+
 def get_institution_rules(institution_name: str) -> dict:
     if not institution_name:
         return {}
+
     key = normalize_identity(institution_name)
+
     if _use_real_backend():
         collection = _collection("InstitutionalRules")
-        record = collection.find_one({"normalized_aliases": key}, {"_id": 0}) if collection is not None else None
-        return _normalize_rule_record(record, institution_name) if record else {}
-    for record in _MEMORY["InstitutionalRules"]:
-        if key in record.get("normalized_aliases", []):
-            return _normalize_rule_record(record, institution_name)
-    return {}
 
+        if collection is not None:
+
+            # 1. Exact normalized match
+            record = collection.find_one(
+                {"normalized_aliases": key},
+                {"_id": 0}
+            )
+
+            # 2. Exact institution/alias match (case-insensitive)
+            if not record:
+                record = collection.find_one(
+                    {
+                        "$or": [
+                            {
+                                "institution": {
+                                    "$regex": f"^{institution_name}$",
+                                    "$options": "i"
+                                }
+                            },
+                            {
+                                "aliases": {
+                                    "$regex": f"^{institution_name}$",
+                                    "$options": "i"
+                                }
+                            }
+                        ]
+                    },
+                    {"_id": 0}
+                )
+
+            # 3. Containment + fuzzy fallback
+            if not record:
+                candidates = list(
+                    collection.find(
+                        {},
+                        {
+                            "_id": 0,
+                            "institution": 1,
+                            "aliases": 1,
+                            "normalized_aliases": 1
+                        }
+                    )
+                )
+
+                best_match = None
+                best_score = 0.0
+
+                for candidate in candidates:
+
+                    names = [candidate.get("institution", "")]
+                    names.extend(candidate.get("aliases", []))
+                    names.extend(candidate.get("normalized_aliases", []))
+
+                    for name in names:
+
+                        candidate_key = normalize_identity(str(name))
+
+                        # Fixes:
+                        # "Central Bureau of Investigation, Cyber Crime Division (claimed)"
+                        # -> matches
+                        # "Central Bureau of Investigation"
+                        if (
+                            candidate_key in key
+                            or key in candidate_key
+                        ):
+                            return _normalize_rule_record(
+                                candidate,
+                                institution_name
+                            )
+
+                        score = SequenceMatcher(
+                            None,
+                            key,
+                            candidate_key
+                        ).ratio()
+
+                        if score > best_score:
+                            best_score = score
+                            best_match = candidate
+
+                if best_score >= 0.75:
+                    record = best_match
+
+            return (
+                _normalize_rule_record(record, institution_name)
+                if record else {}
+            )
+
+    # Memory fallback
+    for record in _MEMORY["InstitutionalRules"]:
+
+        names = [record.get("institution", "")]
+        names.extend(record.get("aliases", []))
+        names.extend(record.get("normalized_aliases", []))
+
+        for name in names:
+
+            candidate_key = normalize_identity(str(name))
+
+            if (
+                candidate_key == key
+                or candidate_key in key
+                or key in candidate_key
+            ):
+                return _normalize_rule_record(
+                    record,
+                    institution_name
+                )
+
+    return {}
 
 def lookup_blacklist(identity: str) -> Optional[dict]:
     if not identity:
