@@ -3,11 +3,13 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Any
+
+import streamlit as st
 
 try:
     from dotenv import load_dotenv
-except ImportError:  # pragma: no cover
+except ImportError:
     load_dotenv = None
 
 
@@ -18,21 +20,33 @@ def load_environment() -> None:
         load_dotenv(Path.cwd() / ".env")
 
 
+def get_env(key: str, default: Any = None) -> Any:
+    # Try Streamlit secrets first
+    if hasattr(st, "secrets") and key in st.secrets:
+        return st.secrets[key]
+    
+    # Fallback to environment variables
+    load_environment()
+    return os.getenv(key, default)
+
+
 def env_bool(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
+    value = get_env(name)
     if value is None:
         return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def env_float(name: str, default: float) -> float:
-    value = os.getenv(name)
+    value = get_env(name)
     if value in (None, ""):
         return default
     try:
         return float(value)
     except ValueError as exc:
-        raise RuntimeError(f"{name} must be a decimal number between 0 and 1.") from exc
+        raise RuntimeError(f"{name} must be a decimal number.") from exc
 
 
 @dataclass(frozen=True)
@@ -53,27 +67,32 @@ class Settings:
     strict_production_mode: bool
     agent_builder_webhook_url: str
     gcp_project_id: str
+    trusted_guardian_name: str
+    trusted_guardian_phone: str
+    trusted_guardian_email: str
 
 
 def get_settings() -> Settings:
-    load_environment()
     return Settings(
-        gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
-        mongodb_uri=os.getenv("MONGODB_URI", ""),
-        mongodb_database=os.getenv("MONGODB_DATABASE", "fraud_agent"),
-        elastic_node=os.getenv("ELASTIC_NODE", ""),
-        elastic_api_key=os.getenv("ELASTIC_API_KEY", ""),
-        elasticsearch_index=os.getenv("ELASTICSEARCH_INDEX", "anti-scam-threat-registry"),
-        twilio_account_sid=os.getenv("TWILIO_ACCOUNT_SID", ""),
-        twilio_auth_token=os.getenv("TWILIO_AUTH_TOKEN", ""),
-        twilio_phone_number=os.getenv("TWILIO_PHONE_NUMBER", ""),
-        sendgrid_api_key=os.getenv("SENDGRID_API_KEY", ""),
-        sendgrid_from_email=os.getenv("SENDGRID_FROM_EMAIL", ""),
+        gemini_api_key=get_env("GEMINI_API_KEY", ""),
+        mongodb_uri=get_env("MONGODB_URI", ""),
+        mongodb_database=get_env("MONGODB_DATABASE", "fraud_agent"),
+        elastic_node=get_env("ELASTIC_NODE", ""),
+        elastic_api_key=get_env("ELASTIC_API_KEY", ""),
+        elasticsearch_index=get_env("ELASTICSEARCH_INDEX", "anti-scam-threat-registry"),
+        twilio_account_sid=get_env("TWILIO_ACCOUNT_SID", ""),
+        twilio_auth_token=get_env("TWILIO_AUTH_TOKEN", ""),
+        twilio_phone_number=get_env("TWILIO_PHONE_NUMBER", ""),
+        sendgrid_api_key=get_env("SENDGRID_API_KEY", ""),
+        sendgrid_from_email=get_env("SENDGRID_FROM_EMAIL", ""),
         fraud_alert_threshold=env_float("FRAUD_ALERT_THRESHOLD", 0.8),
         production_mode=env_bool("PRODUCTION_MODE", False),
         strict_production_mode=env_bool("STRICT_PRODUCTION_MODE", False),
-        agent_builder_webhook_url=os.getenv("AGENT_BUILDER_WEBHOOK_URL", ""),
-        gcp_project_id=os.getenv("GCP_PROJECT_ID", ""),
+        agent_builder_webhook_url=get_env("AGENT_BUILDER_WEBHOOK_URL", ""),
+        gcp_project_id=get_env("GCP_PROJECT_ID", ""),
+        trusted_guardian_name=get_env("TRUSTED_GUARDIAN_NAME", "Trusted Guardian"),
+        trusted_guardian_phone=get_env("TRUSTED_GUARDIAN_PHONE", ""),
+        trusted_guardian_email=get_env("TRUSTED_GUARDIAN_EMAIL", ""),
     )
 
 
@@ -82,10 +101,15 @@ def validate_startup(required: Iterable[str] | None = None) -> None:
     names = list(required or [])
     if settings.strict_production_mode:
         names.extend(["GEMINI_API_KEY", "MONGODB_URI", "ELASTIC_NODE", "ELASTIC_API_KEY"])
-    missing = [name for name in dict.fromkeys(names) if not os.getenv(name)]
+    
+    missing = []
+    for name in dict.fromkeys(names):
+        if not get_env(name):
+            missing.append(name)
+            
     if missing:
         raise RuntimeError(
             "Missing required production configuration: "
             + ", ".join(missing)
-            + ". Set these variables in .env or the runtime environment."
+            + ". Set these variables in .env or Streamlit secrets."
         )

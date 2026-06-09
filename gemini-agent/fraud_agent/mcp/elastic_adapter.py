@@ -40,19 +40,23 @@ _SEEDED_REGISTRY = [
 ]
 
 
+from ..config import get_settings
+
 def _use_real_backend() -> bool:
-    return bool(os.getenv("ELASTIC_NODE")) and bool(os.getenv("ELASTIC_API_KEY")) and Elasticsearch is not None
+    settings = get_settings()
+    return bool(settings.elastic_node) and bool(settings.elastic_api_key) and Elasticsearch is not None
 
 
 def _client():
+    settings = get_settings()
     if not _use_real_backend():
-        if os.getenv("STRICT_PRODUCTION_MODE", "false").lower() == "true":
+        if settings.strict_production_mode:
             raise RuntimeError("Elasticsearch is not configured, and STRICT_PRODUCTION_MODE is enabled. Cannot use deterministic fallback.")
         return None
     try:
         client = Elasticsearch(
-            os.getenv("ELASTIC_NODE", ""),
-            api_key=os.getenv("ELASTIC_API_KEY", ""),
+            settings.elastic_node,
+            api_key=settings.elastic_api_key,
             request_timeout=1,
             retry_on_timeout=False,
             max_retries=0,
@@ -60,13 +64,13 @@ def _client():
         client.info() # A simple call to check connection
         return client
     except Exception as e:
-        if os.getenv("STRICT_PRODUCTION_MODE", "false").lower() == "true":
+        if settings.strict_production_mode:
             raise RuntimeError(f"Failed to connect to Elasticsearch in STRICT_PRODUCTION_MODE: {e}")
         return None
 
 
 def _index_name() -> str:
-    return os.getenv("ELASTICSEARCH_INDEX", "anti-scam-threat-registry")
+    return get_settings().elasticsearch_index
 
 
 def levenshtein_distance(left: str, right: str) -> int:
@@ -180,7 +184,7 @@ def _fetch_candidates_from_es(search_text: str, size: int = 20) -> List[dict]:
             candidates.append(source)
         return candidates
     except Exception as e:
-        if os.getenv("STRICT_PRODUCTION_MODE", "false").lower() == "true":
+        if get_settings().strict_production_mode:
             raise RuntimeError(f"Failed to search Elasticsearch in STRICT_PRODUCTION_MODE: {e}")
         return _seeded_candidates()
 

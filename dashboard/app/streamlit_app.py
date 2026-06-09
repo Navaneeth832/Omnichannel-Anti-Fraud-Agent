@@ -5,10 +5,15 @@ from pathlib import Path
 
 import streamlit as st
 
+# Ensure the gemini-agent directory is in the path
 ROOT = Path(__file__).resolve().parents[2]
 AGENT_ROOT = ROOT / "gemini-agent"
 if str(AGENT_ROOT) not in sys.path:
     sys.path.insert(0, str(AGENT_ROOT))
+
+# Import config to ensure environment is loaded
+from fraud_agent.config import load_environment
+load_environment()
 
 from fraud_agent.mcp.mongo_adapter import list_alert_logs, list_cases
 from fraud_agent.multimodal import analyze_audio, analyze_image, analyze_pdf

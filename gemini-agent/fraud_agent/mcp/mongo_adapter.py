@@ -234,16 +234,17 @@ def save_blacklist_entry(record: dict) -> dict:
     return deepcopy(payload)
 
 
+from ..config import get_settings
+
 def get_guardian_profiles() -> list[dict]:
     if _use_real_backend():
         collection = _collection("GuardianProfiles")
         profiles = list(collection.find({"escalation_enabled": True}, {"_id": 0}).sort("guardian_name", ASCENDING))
         if profiles:
             return profiles
-    env_phone = os.getenv("TRUSTED_GUARDIAN_PHONE", "")
-    env_email = os.getenv("TRUSTED_GUARDIAN_EMAIL", "")
-    if env_phone or env_email:
-        return [{"guardian_name": os.getenv("TRUSTED_GUARDIAN_NAME", "Trusted Guardian"), "guardian_phone": env_phone, "guardian_email": env_email, "escalation_enabled": True}]
+    settings = get_settings()
+    if settings.trusted_guardian_phone or settings.trusted_guardian_email:
+        return [{"guardian_name": settings.trusted_guardian_name, "guardian_phone": settings.trusted_guardian_phone, "guardian_email": settings.trusted_guardian_email, "escalation_enabled": True}]
     return [deepcopy(profile) for profile in _MEMORY["GuardianProfiles"] if profile.get("escalation_enabled")]
 
 
