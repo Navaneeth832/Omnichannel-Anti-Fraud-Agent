@@ -78,14 +78,12 @@ Evidence:
 """ + text
     try:
         genai.configure(api_key=settings.gemini_api_key)
-        model = genai.GenerativeModel("gemini-2.5-flash")
+        model = genai.GenerativeModel("gemini-2.0-flash")
         response = model.generate_content(prompt, generation_config={"temperature": 0, "response_mime_type": "application/json"})
         payload = _coerce_json(getattr(response, "text", "") or "{}")
-        fallback = deterministic_fallback_analysis(text)
-        fallback.update({k: payload.get(k, fallback.get(k)) for k in fallback.keys() | payload.keys()})
-        fallback["source"] = "gemini"
-        return fallback
-    except Exception:
+        return payload
+    except Exception as e:
+        print(f"Gemini API Error: {e}")
         if settings.strict_production_mode:
             raise
         return deterministic_fallback_analysis(text)

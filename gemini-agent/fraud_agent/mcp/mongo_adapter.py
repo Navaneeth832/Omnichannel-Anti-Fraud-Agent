@@ -237,7 +237,9 @@ def save_blacklist_entry(record: dict) -> dict:
 def get_guardian_profiles() -> list[dict]:
     if _use_real_backend():
         collection = _collection("GuardianProfiles")
-        return list(collection.find({"escalation_enabled": True}, {"_id": 0}).sort("guardian_name", ASCENDING)) if collection is not None else []
+        profiles = list(collection.find({"escalation_enabled": True}, {"_id": 0}).sort("guardian_name", ASCENDING))
+        if profiles:
+            return profiles
     env_phone = os.getenv("TRUSTED_GUARDIAN_PHONE", "")
     env_email = os.getenv("TRUSTED_GUARDIAN_EMAIL", "")
     if env_phone or env_email:

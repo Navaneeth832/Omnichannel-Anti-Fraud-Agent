@@ -67,8 +67,10 @@ def _send_sendgrid_email(to_email: str, subject: str, html_content: str) -> Dict
 def send_fraud_alert(threat_score: float, case_id: str, summary: str, trusted_contacts: List[GuardianProfile] | None = None) -> Dict[str, Any]:
     settings = get_settings()
     if threat_score < settings.fraud_alert_threshold:
+        print(f"DEBUG: Score {threat_score} < Threshold {settings.fraud_alert_threshold}")
         return {"status": "skipped", "message": "Threat score below alert threshold.", "logs": []}
-    contacts = trusted_contacts if trusted_contacts is not None else _trusted_profiles()
+    contacts = _trusted_profiles()
+    print(f"DEBUG: Contacts found: {len(contacts)}")
     if not contacts:
         log = save_alert_log(case_id, "guardian", "skipped", {"message": "No trusted guardian contacts configured."})
         return {"status": "skipped", "message": "No trusted guardian contacts configured.", "logs": [log]}
@@ -77,10 +79,14 @@ def send_fraud_alert(threat_score: float, case_id: str, summary: str, trusted_co
     results: Dict[str, Any] = {"status": "sent", "logs": []}
     for profile in contacts:
         if profile.guardian_phone:
+            print(f"DEBUG: Attempting to send SMS to {profile.guardian_phone}")
             response = _send_twilio_sms(profile.guardian_phone, alert_message)
+            print(f"DEBUG: Twilio response: {response}")
             results["logs"].append(save_alert_log(case_id, "twilio", response.get("status", "unknown"), {"guardian_name": profile.guardian_name, **response}))
         if profile.guardian_email:
+            print(f"DEBUG: Attempting to send Email to {profile.guardian_email}")
             response = _send_sendgrid_email(profile.guardian_email, subject, f"<p>{alert_message}</p>")
+            print(f"DEBUG: SendGrid response: {response}")
             results["logs"].append(save_alert_log(case_id, "sendgrid", response.get("status", "unknown"), {"guardian_name": profile.guardian_name, **response}))
     if not results["logs"]:
         results["status"] = "skipped"
