@@ -159,8 +159,7 @@ Omnichannel-Anti-Fraud-Agent/
 │   ├── utils/
 │   │   ├── audio_utils.py             # Audio preprocessing helpers
 │   │   ├── image_utils.py             # Image/OCR preprocessing helpers
-│   │   └── text_utils.py              # Text normalization utilities
-│   └── requirements.txt               # Dashboard dependencies
+│   └── └── text_utils.py              # Text normalization utilities          
 │
 ├── gemini-agent/                      # Core agent and backend
 │   ├── fraud_agent/
@@ -194,8 +193,8 @@ Omnichannel-Anti-Fraud-Agent/
 │   │   ├── mongodb_mcp.py             # MongoDB MCP tool wrappers
 │   │   └── elastic_mcp.py             # Elasticsearch MCP tool wrappers
 │   ├── tester.py                      # Manual integration tester
-│   ├── verify_project.py              # Pre-run environment verification
-│   └── requirements.txt               # Agent dependencies
+│   └──  verify_project.py              # Pre-run environment verification
+│             
 │
 ├── data/
 │   ├── reference_scripts/             # Sample scam scripts for testing
@@ -212,8 +211,10 @@ Omnichannel-Anti-Fraud-Agent/
 │   ├── test_phase3_integration.py     # MCP integration tests
 │   └── test_production_pipeline.py    # End-to-end pipeline tests
 │
-├── .env.example                       # Environment variable template
+├── .env.example                      # Environment variable template
+├── packages.txt                      
 ├── .gitignore
+├── requirements.txt
 └── LICENSE
 ```
 
@@ -247,11 +248,8 @@ brew install ffmpeg tesseract
 git clone https://github.com/<your-org>/Omnichannel-Anti-Fraud-Agent.git
 cd Omnichannel-Anti-Fraud-Agent
 
-# Install dashboard dependencies
-pip install -r dashboard/requirements.txt
-
-# Install agent dependencies
-pip install -r gemini-agent/requirements.txt
+# Install dependencies
+pip install -r requirements.txt
 ```
 
 -----
