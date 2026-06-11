@@ -16,7 +16,7 @@ from fraud_agent.config import load_environment
 load_environment()
 
 from fraud_agent.mcp.mongo_adapter import list_alert_logs, list_cases
-from fraud_agent.multimodal import analyze_audio, analyze_image, analyze_pdf
+from fraud_agent.multimodal import analyze_audio, analyze_image, analyze_pdf,extract_pdf_text
 from fraud_agent.orchestrator import analyze_text
 from fraud_agent.system_health import check_system_health
 
@@ -89,8 +89,17 @@ def victim_view() -> None:
         pdf = st.file_uploader("Upload PDF", type=["pdf"])
         if st.button("Analyze PDF") and pdf is not None:
             with st.spinner("Extracting PDF text and routing to orchestrator..."):
+                
+                # --- THE VIBE CHECK ---
+                # Let's peek at the raw text before it goes to Gemini
+                raw_text = extract_pdf_text(pdf.getvalue())
+                st.info(f"👀 RAW TEXT PEEK:\n\n{raw_text[:1000]}") 
+                # ----------------------
+                
                 report = analyze_pdf(pdf.getvalue())
+                
             st.session_state["latest_report"] = report
+
     if "latest_report" in st.session_state:
         render_report(st.session_state["latest_report"])
 
